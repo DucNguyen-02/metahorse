@@ -1,0 +1,33 @@
+stages:
+  - deploy
+
+variables:
+  GIT_STRATEGY: clone
+
+cache:
+  key: ${CI_COMMIT_REF_SLUG}
+  paths:
+    - node_modules/
+    - .next/
+
+deploy-develop:
+  stage: deploy
+  before_script:
+    - eval $(ssh-agent -s)
+    - echo "$CI_DEV_SSH_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$SSH_KNOWN_HOSTS" >> ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - cat $CI_DEV_ENV_FILE > .env
+    - sed -i "s~DEV_PORT~$CI_DEV_PORT~g" dev-meta-horse-frontend.sh
+    - npm install
+    - npm run build
+    - rsync -ahrvz --delete -e "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" build/. $CI_DEV_USER@$CI_DEV_IP:$CI_DEV_PATH/build/
+    - scp dev-meta-horse-frontend.sh $CI_DEV_USER@$CI_DEV_IP:$CI_DEV_PATH
+    - ssh $CI_DEV_USER@$CI_DEV_IP "cd $CI_DEV_PATH && pm2 restart dev-meta-horse-frontend.sh"
+  only:
+    - develop
+  tags:
+    - DEV
